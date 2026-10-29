@@ -5,48 +5,120 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GitHub Developer Portfolio</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .heatmap-placeholder { height: 150px; background: #e9ecef; border-radius: 8px; }
-    </style>
+    <!-- Chart.js included here -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-light">
     <div class="container py-5">
+        <!-- Input Username -->
+        <div class="input-group mb-4 w-50 mx-auto">
+            <input type="text" id="githubUsername" class="form-control" placeholder="Enter GitHub Username">
+            <button class="btn btn-dark" onclick="loadProfile()">Load Portfolio</button>
+        </div>
+
         <!-- Profile Header -->
-        <header class="text-center mb-5">
-            <h1 class="display-4">Developer Portfolio</h1>
-            <p class="lead">Followers: <span id="followerCount">0</span> | Total Stars: <span id="totalStars">0</span></p>
-            <div id="matchBadge" class="badge bg-success fs-5 d-none">Match: 0%</div>
+        <header class="text-center mb-5" id="profileSection" style="display:none;">
+            <h1 class="display-4">Developer Dashboard</h1>
+            <p class="lead">Followers: <span id="followerCount" class="fw-bold">0</span> | Total Stars: <span id="totalStars" class="fw-bold">0</span></p>
+            <span class="badge bg-info fs-6 mb-3" id="vibeHealthBadge"></span>
+            <br>
+            <div id="matchBadge" class="badge bg-success fs-5 d-none mt-2">Match: 0%</div>
+            
+            <!-- Pie Chart Canvas -->
+            <div class="mt-4" style="max-width: 250px; margin: 0 auto;">
+                <canvas id="languagePieChart"></canvas>
+            </div>
         </header>
 
-        <!-- Vibe Check / Job Description Input -->
+        <!-- Vibe Check Input -->
         <div class="card mb-5 shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Tech Stack Compatibility Check</h5>
-                <textarea id="jobDescription" class="form-control mb-3" rows="3" placeholder="Paste a job description here..."></textarea>
-                <button class="btn btn-primary" onclick="calculateMatch()">Check Vibe</button>
+                <h5 class="card-title">Vibe Check: Tech Stack Compatibility</h5>
+                <textarea id="jobDescription" class="form-control mb-3" rows="3" placeholder="Paste a job description here to see if your repo languages match..."></textarea>
+                <button class="btn btn-primary" onclick="calculateMatch()">Check Compatibility Score</button>
             </div>
         </div>
 
-        <!-- Contribution Graph -->
-        <div class="mb-5">
+        <!-- Contribution Graph (Heatmap) -->
+        <div class="mb-5 text-center" id="contributionSection" style="display:none;">
             <h3>Coding Activity</h3>
-            <div class="heatmap-placeholder d-flex align-items-center justify-content-center text-muted">
-                Contribution Heatmap Grid will render here
-            </div>
+            <img id="heatmapGraph" src="" alt="GitHub Contribution Heatmap" class="img-fluid border rounded p-2 bg-white shadow-sm">
         </div>
 
         <!-- Repository Cards -->
         <h3>Top Repositories</h3>
         <div class="row" id="repoContainer">
-            <!-- Repo cards will be injected here via JavaScript -->
+            <!-- Rendered via JS -->
         </div>
     </div>
 
     <script>
-        function calculateMatch() {
-            // Logic to send job description to backend, compare keywords, and display Match Percentage badge
-            document.getElementById('matchBadge').classList.remove('d-none');
-            document.getElementById('matchBadge').innerText = 'Match: 85%';
+        async function loadProfile() {
+            const username = document.getElementById('githubUsername').value;
+            if(!username) return alert('Please enter a username');
+
+            const res = await fetch(`/api/github/${username}`);
+            const data = await res.json();
+
+            // Unhide the profile section and update text
+            document.getElementById('profileSection').style.display = 'block';
+            document.getElementById('followerCount').innerText = data.profile.followers;
+            document.getElementById('totalStars').innerText = data.profile.totalStars;
+            document.getElementById('vibeHealthBadge').innerText = "AI Health Check: " + data.profile.vibeHealth;
+
+            // Load Heatmap Graph
+            document.getElementById('contributionSection').style.display = 'block';
+            document.getElementById('heatmapGraph').src = `https://ghchart.rshah.org/${username}`;
+
+            // Load Repo Cards
+            const repoContainer = document.getElementById('repoContainer');
+            repoContainer.innerHTML = '';
+            
+            data.repos.forEach(repo => {
+                repoContainer.innerHTML += `
+                    <div class="col-md-6 mb-3">
+                        <div class="card h-100 shadow-sm border-0">
+                            <div class="card-body">
+                                <h5 class="card-title text-primary">${repo.name}</h5>
+                                <p class="card-text text-muted small">${repo.description || 'No description provided.'}</p>
+                                <span class="badge bg-secondary">${repo.language || 'Markdown'}</span>
+                                <span class="badge bg-warning text-dark">⭐ ${repo.stargazers_count}</span>
+                                <span class="badge bg-info text-dark">🍴 ${repo.forks_count}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Render Top Languages Pie Chart
+            if (data.languages) {
+                const ctx = document.getElementById('languagePieChart').getContext('2d');
+                if (window.myPieChart) { window.myPieChart.destroy(); }
+                window.myPieChart = new Chart(ctx, {
+                    type: 'pie',
+                    data: {
+                        labels: Object.keys(data.languages),
+                        datasets: [{
+                            data: Object.values(data.languages),
+                            backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']
+                        }]
+                    }
+                });
+            }
+        }
+
+        async function calculateMatch() {
+            const jd = document.getElementById('jobDescription').value;
+            const res = await fetch('/api/vibe-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jobDescription: jd })
+            });
+            const data = await res.json();
+
+            const badge = document.getElementById('matchBadge');
+            badge.classList.remove('d-none');
+            badge.innerText = `Job Match: ${data.matchPercentage}%`;
         }
     </script>
 </body>
